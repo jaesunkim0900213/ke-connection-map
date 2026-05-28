@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>일본 6수송 연결도 — KE Live</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Segoe UI","Apple SD Gothic Neo",sans-serif;font-size:14px;background:#f4f6f8;color:#2c3e50}
+
+/* ── LOADING ── */
+#loading{position:fixed;inset:0;background:#1a3a5c;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;z-index:9999;gap:20px;color:#fff;
+  transition:opacity .4s}
+#loading.hide{opacity:0;pointer-events:none}
+.spinner{width:48px;height:48px;border:4px solid rgba(255,255,255,.2);
+  border-top-color:#5b9bd5;border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.load-title{font-size:18px;font-weight:700}
+.load-sub{font-size:13px;opacity:.7}
+.load-prog{width:240px;height:4px;background:rgba(255,255,255,.15);border-radius:2px;overflow:hidden}
+.load-bar{height:100%;background:#5b9bd5;border-radius:2px;width:0;transition:width .3s}
+
+/* ── ERROR BANNER ── */
+#error-banner{display:none;background:#fff3cd;border:1px solid #ffc107;
+  padding:10px 20px;font-size:13px;color:#856404;
+  display:flex;align-items:center;justify-content:space-between}
+#error-banner.show{display:flex}
+
+/* ── NAV ── */
+.nav{background:#1a3a5c;display:flex;align-items:stretch;position:sticky;top:0;z-index:1000;box-shadow:0 1px 4px rgba(0,0,0,.2)}
+.nav-brand{color:#fff;font-size:16px;font-weight:700;padding:0 20px;display:flex;align-items:center;
+  border-right:1px solid rgba(255,255,255,.15);white-space:nowrap;gap:10px}
+.nav-brand small{font-size:11px;font-weight:400;opacity:.6}
+.live-dot{width:8px;height:8px;border-radius:50%;background:#22c55e;
+  animation:pulse 2s infinite;flex-shrink:0}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.nav-tab{color:rgba(255,255,255,.6);padding:14px 16px;cursor:pointer;font-size:13px;
+  border-bottom:3px solid transparent;transition:all .15s;white-space:nowrap}
+.nav-tab:hover{color:#fff;background:rgba(255,255,255,.07)}
+.nav-tab.active{color:#fff;border-bottom-color:#5b9bd5;font-weight:600}
+.badge{background:#5b9bd5;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:600;margin-left:5px}
+.nav-right{margin-left:auto;display:flex;align-items:center;gap:12px;padding:0 20px}
+.update-time{font-size:11px;color:rgba(255,255,255,.5)}
+.refresh-btn{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);
+  border-radius:6px;padding:5px 12px;color:#fff;font-size:12px;cursor:pointer}
+.refresh-btn:hover{background:rgba(255,255,255,.2)}
+
+/* ── SEASON BAR ── */
+.season-bar{background:#0f2744;padding:0 24px;display:flex;align-items:center;gap:4px;
+  border-bottom:1px solid rgba(255,255,255,.08)}
+.season-label{color:rgba(255,255,255,.5);font-size:11px;font-weight:600;margin-right:8px;white-space:nowrap}
+.s-btn{color:rgba(255,255,255,.55);padding:8px 16px;cursor:pointer;font-size:12px;font-weight:500;
+  border-bottom:2px solid transparent;transition:all .15s;white-space:nowrap;text-align:center;line-height:1.4}
+.s-btn:hover{color:#fff;background:rgba(255,255,255,.06)}
+.s-btn.active{color:#fff;border-bottom-color:#f0a500;font-weight:700}
+.s-btn.empty{color:rgba(255,255,255,.25);cursor:default;pointer-events:none}
+.s-count{font-size:10px;opacity:.7}
+.season-diff{margin-left:auto;font-size:11px;color:rgba(255,255,255,.45);padding:8px 0}
+
+/* ── FILTER BAR ── */
+.fbar{background:#fff;padding:10px 24px;display:flex;flex-wrap:wrap;gap:8px;
+  align-items:center;border-bottom:1px solid #dde3ea}
+.fl{font-size:12px;color:#555;font-weight:600;white-space:nowrap}
+select,input[type=text]{border:1px solid #d0d7df;border-radius:6px;padding:5px 10px;
+  font-size:13px;background:#fff;cursor:pointer}
+select:focus,input:focus{outline:none;border-color:#5b9bd5}
+.btn{background:#f4f6f8;border:1px solid #d0d7df;border-radius:6px;padding:5px 12px;
+  font-size:13px;cursor:pointer;color:#444}
+.btn:hover{background:#e8edf2}
+.sep{width:1px;height:22px;background:#dde3ea;margin:0 2px}
+.mct-sel{border:1.5px solid #5b9bd5!important;background:#f0f6ff!important;font-weight:600;color:#1a3a5c!important}
+.leg{display:flex;align-items:center;gap:5px;font-size:12px;color:#555;margin-left:auto}
+.leg span{display:flex;align-items:center;gap:4px;margin-left:10px}
+
+/* ── PANES ── */
+.pane{display:none;padding:20px 24px}
+.pane.active{display:block}
+#pane-map{padding:0;position:relative}
+#mapbox{height:calc(100vh - 118px);min-height:480px;width:100%}
+
+/* ── STATS ── */
+.stats{display:flex;gap:12px;margin-bottom:18px;flex-wrap:wrap}
+.stat{background:#fff;border:1px solid #dde3ea;border-radius:8px;padding:12px 18px;min-width:110px}
+.stat-n{font-size:24px;font-weight:700;line-height:1;color:#1a3a5c}
+.stat-l{font-size:12px;color:#888;margin-top:4px}
+.stat-note{font-size:11px;color:#5b9bd5;margin-top:2px}
+
+/* ── TABLE ── */
+.wrap{overflow-x:auto;border-radius:8px;border:1px solid #dde3ea;background:#fff}
+table{border-collapse:collapse;font-size:13px;width:100%}
+thead th{background:#1a3a5c;color:#fff;padding:9px 10px;text-align:center;font-size:12px;
+  font-weight:600;white-space:nowrap;position:sticky;top:0}
+th.l,td.l{text-align:left;padding-left:14px}
+td{padding:7px 10px;border-bottom:1px solid #f0f2f4;text-align:center;font-size:13px;vertical-align:middle}
+td.dest{font-weight:700;font-size:14px}
+td.time{font-variant-numeric:tabular-nums;color:#444}
+tr:hover td{background:#f7f9fc!important}
+.rgrow td{font-weight:600;font-size:12px;color:#fff;padding:4px 14px}
+.c-IB{background:#d4edda;color:#1a5c2a;border-radius:4px;font-weight:700;font-size:11px;
+  padding:2px 3px;display:inline-block;width:100%;text-align:center;line-height:1.4}
+.c-BI{background:#d0e4f7;color:#0d3d6e;border-radius:4px;font-weight:700;font-size:11px;
+  padding:2px 3px;display:inline-block;width:100%;text-align:center;line-height:1.4}
+.c-OB{background:#fef3cd;color:#7a5500;border-radius:4px;font-weight:700;font-size:11px;
+  padding:2px 3px;display:inline-block;width:100%;text-align:center;line-height:1.4}
+.c-time{font-size:9px;opacity:.85;display:block}
+.new-route td{background:#f0fdf4!important}
+
+/* ── AIRPORT CARDS ── */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}
+.card{background:#fff;border:1px solid #dde3ea;border-radius:8px;overflow:hidden}
+.chdr{background:#1a3a5c;color:#fff;padding:10px 16px;font-weight:700;font-size:14px;
+  display:flex;justify-content:space-between;align-items:center}
+.chdr small{font-size:12px;font-weight:400;opacity:.75}
+.crow{display:flex;align-items:center;padding:8px 14px;border-bottom:1px solid #f0f2f4;gap:8px}
+.crow:last-child{border-bottom:none}
+.rtag{font-size:11px;padding:2px 6px;border-radius:4px;color:#fff;font-weight:600}
+.cdest{font-weight:700;font-size:14px;min-width:36px}
+.cflt{font-size:11px;color:#888;flex:1}
+.ctm{font-size:12px;color:#555;text-align:right;white-space:nowrap}
+.cbadge{font-size:12px;font-weight:700;padding:2px 8px;border-radius:4px;white-space:nowrap}
+.cmin{font-size:10px;opacity:.8;margin-left:2px}
+
+/* ── TIMELINE ── */
+.tl{display:flex;flex-direction:column;gap:6px}
+.tli{background:#fff;border:1px solid #dde3ea;border-radius:8px;padding:10px 16px;
+  display:flex;align-items:center;gap:12px}
+.tli:hover{border-color:#5b9bd5}
+.tlt{font-size:20px;font-weight:800;color:#1a3a5c;min-width:60px;font-variant-numeric:tabular-nums}
+.tlb{flex:1}
+.tlr{font-size:14px;font-weight:700}
+.tlf{font-size:12px;color:#888;margin-top:2px}
+.tlaps{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.tlap{font-size:12px;padding:2px 8px;border-radius:4px;font-weight:600}
+.tlap.IB{background:#d4edda;color:#1a5c2a}
+.tlap.BI{background:#d0e4f7;color:#0d3d6e}
+.tlap.OB{background:#fef3cd;color:#7a5500}
+.tlcnt{background:#eef2f7;color:#1a3a5c;border-radius:6px;padding:5px 10px;font-weight:700;font-size:13px;text-align:center;min-width:52px}
+
+/* ── MAP ── */
+.mleg{position:absolute;bottom:28px;left:12px;z-index:900;background:rgba(255,255,255,.95);
+  border:1px solid #dde3ea;border-radius:8px;padding:12px 16px;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.1)}
+.mleg strong{display:block;margin-bottom:8px;color:#1a3a5c;font-size:13px;font-weight:700}
+.ml{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.mct-badge{position:absolute;top:12px;right:12px;z-index:900;background:#1a3a5c;color:#fff;
+  border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.nodata{text-align:center;color:#bbb;padding:50px;font-size:14px}
+.mno{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:900;
+  background:rgba(255,255,255,.97);border:1px solid #dde3ea;border-radius:10px;
+  padding:24px 32px;text-align:center;font-size:14px;color:#555;
+  box-shadow:0 4px 16px rgba(0,0,0,.1);pointer-events:none;display:none}
+</style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div id="loading">
+  <div class="spinner"></div>
+  <div class="load-title">✈ 일본 6수송 연결도</div>
+  <div class="load-sub" id="load-msg">Google Sheets에서 최신 데이터 로딩 중...</div>
+  <div class="load-prog"><div class="load-bar" id="load-bar"></div></div>
+</div>
+
+<!-- ERROR -->
+<div id="error-banner">
+  ⚠️ <span id="error-msg"></span>
+  <button class="btn" onclick="loadData(true)" style="margin-left:12px">재시도</button>
+</div>
+
+<!-- NAV -->
+<div class="nav">
+  <div class="nav-brand">
+    <div class="live-dot" id="live-dot"></div>
+    일본 6수송 연결도 <small>KE Live</small>
+  </div>
+  <div class="nav-tab active" onclick="showTab(this,'matrix')">매트릭스<span class="badge" id="bm">0</span></div>
+  <div class="nav-tab" onclick="showTab(this,'airport')">공항별<span class="badge" id="ba">-</span></div>
+  <div class="nav-tab" onclick="showTab(this,'timeline')">타임라인</div>
+  <div class="nav-tab" onclick="showTab(this,'map')">노선도</div>
+  <div class="nav-right">
+    <span class="update-time" id="update-time"></span>
+    <button class="refresh-btn" onclick="loadData(true)">🔄 새로고침</button>
+  </div>
+</div>
+
+<!-- SEASON BAR -->
+<div class="season-bar">
+  <span class="season-label">시즌</span>
+  <div id="season-btns"></div>
+  <div class="season-diff" id="season-diff"></div>
+</div>
+
+<!-- FILTER BAR -->
+<div class="fbar">
+  <span class="fl">⏱ MAX 연결</span>
+  <select id="fmct" onchange="render()" class="mct-sel">
+    <option value="60">1시간</option>
+    <option value="120">2시간</option>
+    <option value="180">3시간</option>
+    <option value="241" selected>4시간 ★기본</option>
+    <option value="300">5시간</option>
+    <option value="360">6시간</option>
+  </select>
+  <div class="sep"></div>
+  <span class="fl">일본 공항</span>
+  <select id="fap" onchange="render()">
+    <option value="">전체</option>
+    <option value="NRT">NRT 도쿄 나리타</option>
+    <option value="HND">HND 도쿄 하네다</option>
+    <option value="KIX">KIX 오사카</option>
+    <option value="NGO">NGO 나고야</option>
+    <option value="FUK">FUK 후쿠오카</option>
+    <option value="CTS">CTS 삿포로</option>
+    <option value="OKA">OKA 오키나와</option>
+    <option value="AOJ">AOJ 아오모리</option>
+    <option value="KIJ">KIJ 니가타</option>
+    <option value="KOJ">KOJ 가고시마</option>
+    <option value="KMQ">KMQ 고마쓰</option>
+    <option value="OKJ">OKJ 오카야마</option>
+    <option value="KMJ">KMJ 구마모토</option>
+    <option value="NGS">NGS 나가사키</option>
+    <option value="UKB">UKB 고베</option>
+  </select>
+  <div class="sep"></div>
+  <span class="fl">지역</span>
+  <select id="frg" onchange="render()">
+    <option value="">전체</option>
+    <option value="AME">미주</option>
+    <option value="EUR">구주(유럽)</option>
+    <option value="OCE">대양주</option>
+    <option value="SEA">동남아</option>
+    <option value="CHN">중국</option>
+  </select>
+  <div class="sep"></div>
+  <span class="fl">목적지</span>
+  <input type="text" id="fds" placeholder="LAX, BKK..." oninput="render()" style="width:90px">
+  <div class="sep"></div>
+  <span class="fl">방향</span>
+  <select id="fdr" onchange="render()">
+    <option value="">전체</option>
+    <option value="IB">◀ 일본발</option>
+    <option value="BI">▶◀ 양방향</option>
+    <option value="OB">▶ 해외발</option>
+  </select>
+  <button class="btn" onclick="resetF()">초기화</button>
+  <div class="leg">
+    <span><svg width="20" height="4"><line x1="0" y1="2" x2="20" y2="2" stroke="#3a7d44" stroke-width="3"/></svg>◀ 일본발</span>
+    <span><svg width="20" height="4"><line x1="0" y1="2" x2="20" y2="2" stroke="#1a5c9e" stroke-width="3"/></svg>▶◀ 양방향</span>
+    <span><svg width="20" height="4"><line x1="0" y1="2" x2="20" y2="2" stroke="#b8860b" stroke-width="3" stroke-dasharray="4,2"/></svg>▶ 해외발</span>
+  </div>
+</div>
+
+<!-- PANES -->
+<div id="pane-matrix" class="pane active">
+  <div class="stats" id="stats"></div>
+  <div class="wrap"><table><thead><tr id="th"></tr></thead><tbody id="tb"></tbody></table></div>
+</div>
+<div id="pane-airport" class="pane"><div class="grid" id="agrid"></div></div>
+<div id="pane-timeline" class="pane"><div class="tl" id="tlbox"></div></div>
+<div id="pane-map" class="pane">
+  <div id="mapbox"></div>
+  <div class="mct-badge" id="mct-badge">⏱ MAX 4h</div>
+  <div class="mleg">
+    <strong>연결 방향</strong>
+    <div class="ml"><svg width="28" height="4"><line x1="0" y1="2" x2="28" y2="2" stroke="#3a7d44" stroke-width="3"/></svg>◀ 일본발</div>
+    <div class="ml"><svg width="28" height="4"><line x1="0" y1="2" x2="28" y2="2" stroke="#1a5c9e" stroke-width="3"/></svg>▶◀ 양방향</div>
+    <div class="ml"><svg width="28" height="4"><line x1="0" y1="2" x2="28" y2="2" stroke="#b8860b" stroke-width="3" stroke-dasharray="5,3"/></svg>▶ 해외발만</div>
+    <div style="margin-top:8px;padding-top:8px;border-top:1px solid #eee;font-size:11px;color:#777;line-height:1.8">🔵 일본공항 (연결 있음)<br>⬜ 일본공항 (연결 없음)<br>공항 클릭 → 상세 팝업</div>
+  </div>
+  <div class="mno" id="mno">선택 조건에 연결 가능한 스케줄이 없습니다</div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ════════════════════════════════════════════════
+// ★★★ 여기에 GAS 배포 URL을 붙여넣으세요 ★★★
+const GAS_URL = 'https://script.google.com/macros/s/여기에_배포_URL/exec';
+// ════════════════════════════════════════════════
+
+const APLIST = ["NRT", "HND", "KIX", "NGO", "FUK", "CTS", "OKA", "AOJ", "KIJ", "KOJ", "KMQ", "OKJ", "KMJ", "NGS", "UKB"];
+const APMETA = {
+  NRT:{n:"도쿄 나리타",lat:35.765,lng:140.386},HND:{n:"도쿄 하네다",lat:35.553,lng:139.781},
+  KIX:{n:"오사카",lat:34.427,lng:135.244},NGO:{n:"나고야",lat:34.858,lng:136.805},
+  FUK:{n:"후쿠오카",lat:33.585,lng:130.451},CTS:{n:"삿포로",lat:42.775,lng:141.692},
+  OKA:{n:"오키나와",lat:26.195,lng:127.646},AOJ:{n:"아오모리",lat:40.732,lng:140.690},
+  KIJ:{n:"니가타",lat:37.956,lng:139.121},KOJ:{n:"가고시마",lat:31.803,lng:130.719},
+  KMQ:{n:"고마쓰",lat:36.394,lng:136.407},OKJ:{n:"오카야마",lat:34.757,lng:133.854},
+  KMJ:{n:"구마모토",lat:32.837,lng:130.854},NGS:{n:"나가사키",lat:32.916,lng:129.914},
+  UKB:{n:"고베",lat:34.633,lng:135.223}
+};
+const ICN = {lat:37.460,lng:126.441};
+const RC  = {AME:"#1e3a5f",EUR:"#5c2016",OCE:"#1a5c38",SEA:"#4a1a6e",CHN:"#7a1010"};
+const LC  = {IB:"#3a7d44",BI:"#1a5c9e",OB:"#b8860b"};
+const MCT = 60;
+const DC  = {"LAX": [33.942, -118.408], "JFK": [40.641, -73.779], "SFO": [37.619, -122.375], "ORD": [41.978, -87.905], "ATL": [33.64, -84.427], "IAD": [38.944, -77.456], "BOS": [42.365, -71.01], "DFW": [32.897, -97.038], "SEA": [47.449, -122.309], "LAS": [36.08, -115.152], "HNL": [21.324, -157.924], "YVR": [49.194, -123.184], "YYZ": [43.677, -79.631], "CDG": [49.009, 2.548], "FRA": [50.033, 8.571], "LHR": [51.477, -0.461], "AMS": [52.308, 4.764], "FCO": [41.8, 12.239], "MXP": [45.63, 8.728], "MAD": [40.472, -3.561], "IST": [41.275, 28.752], "ZRH": [47.464, 8.549], "VIE": [48.11, 16.57], "BUD": [47.438, 19.261], "PRG": [50.1, 14.261], "LIS": [38.774, -9.135], "DXB": [25.252, 55.364], "SYD": [-33.946, 151.177], "BNE": [-27.384, 153.117], "AKL": [-37.008, 174.791], "BKK": [13.681, 100.747], "HKT": [8.113, 98.316], "SGN": [10.818, 106.652], "HAN": [21.221, 105.807], "DAD": [16.044, 108.199], "CXR": [11.998, 109.219], "PQC": [10.17, 103.993], "SIN": [1.359, 103.989], "KUL": [2.746, 101.71], "MNL": [14.509, 121.02], "CEB": [10.307, 123.979], "GUM": [13.483, 144.797], "CGK": [-6.126, 106.656], "DPS": [-8.749, 115.167], "DEL": [28.556, 77.101], "KTM": [27.697, 85.36], "KTI": [16.462, 107.703], "RGN": [16.907, 96.133], "PEK": [40.08, 116.585], "PVG": [31.143, 121.805], "CAN": [23.392, 113.299], "CGO": [34.519, 113.84], "CSX": [28.189, 113.22], "DLC": [38.965, 121.539], "DYG": [29.495, 110.443], "FOC": [25.935, 119.663], "HFE": [31.78, 117.298], "HGH": [30.229, 120.435], "HKG": [22.308, 113.915], "KMG": [24.992, 102.744], "MFM": [22.15, 113.592], "NKG": [31.742, 118.86], "RMQ": [24.264, 120.621], "SHE": [41.638, 123.483], "SZX": [22.639, 113.811], "TAO": [36.266, 120.374], "TPE": [25.077, 121.233], "TSN": [39.124, 117.346], "UBN": [47.647, 107.779], "WUH": [30.784, 114.208], "XIY": [34.447, 108.752], "XMN": [24.544, 118.128], "YNJ": [42.882, 129.451]};
+
+let SEASONS = {}, META = {}, curSeason = 'W25';
+let curTab = 'matrix', map = null, mlayers = [];
+
+// ── 데이터 로드 ──────────────────────────────────────────────
+async function loadData(forceRefresh = false) {
+  setLoading(true, 'Google Sheets에서 데이터 로딩 중...');
+  setLoadBar(20);
+
+  try {
+    const url = GAS_URL + (forceRefresh ? '?refresh=1' : '');
+    const resp = await fetch(url, {redirect:'follow'});
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+
+    setLoadBar(70);
+    setLoading(true, '데이터 파싱 중...');
+
+    const data = await resp.json();
+    SEASONS = data.seasons || {};
+    META    = data.meta    || {};
+
+    setLoadBar(100);
+
+    // 시즌 버튼 생성
+    buildSeasonBtns();
+
+    // 첫 활성 시즌 선택
+    const available = Object.keys(SEASONS).filter(s => (SEASONS[s]||[]).length > 0);
+    curSeason = available[available.length - 1] || Object.keys(SEASONS)[0] || 'S26';
+    document.querySelectorAll('.s-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.season === curSeason);
+    });
+
+    // 업데이트 시간 표시
+    if (META.updatedAt) {
+      const d = new Date(META.updatedAt);
+      document.getElementById('update-time').textContent =
+        '데이터: ' + d.toLocaleDateString('ko-KR') + ' ' + d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+    }
+
+    document.getElementById('live-dot').style.background = '#22c55e';
+    hideError();
+    updateSeasonDiff();
+    render();
+
+    setTimeout(() => setLoading(false), 300);
+
+  } catch(e) {
+    setLoading(false);
+    showError('데이터 로드 실패: ' + e.message + ' — GAS_URL을 확인하거나 재시도하세요.');
+    document.getElementById('live-dot').style.background = '#ef4444';
+    // 오프라인 폴백: 로컬 캐시
+    const cached = localStorage.getItem('ke_japan_cache');
+    if (cached) {
+      try {
+        const d = JSON.parse(cached);
+        SEASONS = d.seasons || {};
+        META    = d.meta    || {};
+        buildSeasonBtns();
+        const av = Object.keys(SEASONS).filter(s=>(SEASONS[s]||[]).length>0);
+        curSeason = av[av.length-1] || 'W25';
+        updateSeasonDiff();
+        render();
+        showError('⚠️ 오프라인 모드 — 마지막 캐시 데이터 표시 중. 인터넷 연결 후 새로고침하세요.');
+      } catch(e2) {}
+    }
+  }
+}
+
+function setLoadBar(pct) {
+  document.getElementById('load-bar').style.width = pct + '%';
+}
+function setLoading(show, msg) {
+  const el = document.getElementById('loading');
+  if (msg) document.getElementById('load-msg').textContent = msg;
+  el.classList.toggle('hide', !show);
+}
+function showError(msg) {
+  const b = document.getElementById('error-banner');
+  document.getElementById('error-msg').textContent = msg;
+  b.style.display = 'flex';
+}
+function hideError() {
+  document.getElementById('error-banner').style.display = 'none';
+}
+
+// ── 시즌 버튼 ────────────────────────────────────────────────
+function buildSeasonBtns() {
+  const seasonMeta = {
+    W25: '2024/25 동계', S26: '2026 하계', W26: '2025/26 동계'
+  };
+  const container = document.getElementById('season-btns');
+  container.innerHTML = '';
+  container.style.display = 'flex';
+
+  ['W25','S26','W26'].forEach(s => {
+    const cnt = (SEASONS[s]||[]).length;
+    const btn = document.createElement('div');
+    btn.className = 's-btn' + (cnt === 0 ? ' empty' : '');
+    btn.dataset.season = s;
+    btn.innerHTML = `<b>${s}</b><br><span class="s-count">${cnt > 0 ? cnt+'편' : '준비중'}</span>`;
+    if (cnt > 0) btn.onclick = () => setSeason(s, btn);
+    container.appendChild(btn);
+  });
+
+  // 로컬 스토리지에 캐시 저장
+  try {
+    localStorage.setItem('ke_japan_cache', JSON.stringify({seasons:SEASONS, meta:META}));
+  } catch(e) {}
+}
+
+function setSeason(s, el) {
+  curSeason = s;
+  document.querySelectorAll('.s-btn').forEach(b => b.classList.toggle('active', b.dataset.season === s));
+  updateSeasonDiff();
+  render();
+}
+
+function updateSeasonDiff() {
+  const prev = {W25:null,S26:'W25',W26:'S26'}[curSeason];
+  const el = document.getElementById('season-diff');
+  if (!prev || !SEASONS[prev] || !SEASONS[curSeason]) { el.textContent=''; return; }
+  const cur = new Set(SEASONS[curSeason].map(f=>f.route+'_'+f.flt));
+  const pre = new Set(SEASONS[prev].map(f=>f.route+'_'+f.flt));
+  const added   = [...cur].filter(x=>!pre.has(x)).length;
+  const removed = [...pre].filter(x=>!cur.has(x)).length;
+  el.textContent = `vs ${prev} → 신규 +${added}편 / 삭제 -${removed}편`;
+}
+
+// ── 필터 ─────────────────────────────────────────────────────
+function getF() {
+  return {
+    ap: document.getElementById('fap').value,
+    rg: document.getElementById('frg').value,
+    ds: document.getElementById('fds').value.trim().toUpperCase(),
+    dr: document.getElementById('fdr').value,
+    mct: parseInt(document.getElementById('fmct').value)||241
+  };
+}
+function resetF() {
+  ['fap','frg','fds','fdr'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('fmct').value='241';
+  render();
+}
+
+function getConns(fl, maxMin) {
+  const cm = fl.conn_mins||{}, res = {};
+  for (const ap of APLIST) {
+    const m = cm[ap];
+    if (m!=null && m>=MCT && m<=maxMin) res[ap] = fl.conns[ap]||'IB';
+  }
+  return res;
+}
+
+function filterFlights(f) {
+  const FL = SEASONS[curSeason]||[];
+  const prev = {W25:null,S26:'W25',W26:'S26'}[curSeason];
+  const prevSet = prev && SEASONS[prev]
+    ? new Set(SEASONS[prev].map(x=>x.route+'_'+x.flt)) : null;
+
+  return FL.filter(fl => {
+    if (f.rg && fl.region!==f.rg) return false;
+    if (f.ds && !fl.route.includes(f.ds)) return false;
+    const c = getConns(fl,f.mct);
+    if (f.ap) { if(!c[f.ap])return false; if(f.dr&&c[f.ap]!==f.dr)return false; }
+    else if (f.dr) { if(!Object.values(c).includes(f.dr))return false; }
+    if (!Object.keys(c).length) return false;
+    return true;
+  }).map(fl => ({
+    ...fl,
+    _conns: getConns(fl,f.mct),
+    _isNew: prevSet ? !prevSet.has(fl.route+'_'+fl.flt) : false
+  }));
+}
+
+function aaps(fls,apF){return apF?APLIST.filter(a=>a===apF):APLIST.filter(a=>fls.some(fl=>fl._conns[a]));}
+function sym(ct){return ct==='BI'?'▶◀':ct==='IB'?'◀':'▶';}
+function fmtMin(m){if(!m)return'-';const h=Math.floor(m/60),n=m%60;return h>0?(n>0?`${h}h${n}m`:`${h}h`):`${n}m`;}
+
+// ── 탭 전환 ──────────────────────────────────────────────────
+function showTab(el,t) {
+  curTab=t;
+  document.querySelectorAll('.nav-tab').forEach(e=>e.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
+  document.getElementById('pane-'+t).classList.add('active');
+  if(t==='map'){setTimeout(()=>{if(!map)initMap();else map.invalidateSize(true);render();},120);}
+  else render();
+}
+
+// ── MATRIX ────────────────────────────────────────────────────
+function renderMatrix(fls,f) {
+  const aps=aaps(fls,f.ap);
+  document.getElementById('th').innerHTML=
+    "<th class='l' style='min-width:58px'>지역</th><th class='l' style='min-width:50px'>목적지</th>"+
+    "<th class='l' style='min-width:120px'>왕복편</th><th style='min-width:62px'>ICN착</th><th style='min-width:62px'>ICN발</th>"+
+    aps.map(a=>`<th title="${APMETA[a].n}" style="min-width:52px">${a}<br><span style="font-size:9px;font-weight:400;opacity:.8">${APMETA[a].n}</span></th>`).join('');
+  let h='',last='';
+  fls.forEach(fl=>{
+    if(fl.region!==last){
+      h+=`<tr class="rgrow"><td colspan="${5+aps.length}" style="background:${RC[fl.region]||'#444'}">${fl.regionKo} · ${fl.region}</td></tr>`;
+      last=fl.region;
+    }
+    h+=`<tr class="${fl._isNew?'new-route':''}"><td class="l"><span class="rtag" style="background:${RC[fl.region]||'#888'}">${fl.regionKo}</span></td>
+      <td class="l dest">${fl.route}</td><td class="l" style="font-size:12px;color:#666">${fl.obFlt}/${fl.ibFlt}</td>
+      <td class="time">${fl.ibTime}</td><td class="time">${fl.obTime}</td>`;
+    aps.forEach(a=>{
+      const ct=fl._conns[a],mins=(fl.conn_mins||{})[a];
+      h+=ct?`<td><span class="c-${ct}">${sym(ct)}<span class="c-time">${fmtMin(mins)}</span></span></td>`
+           :"<td style='color:#d5dbe2'>—</td>";
+    });
+    h+='</tr>';
+  });
+  document.getElementById('tb').innerHTML=h||`<tr><td colspan="${5+aps.length}" class="nodata">조건에 맞는 노선 없음</td></tr>`;
+  document.getElementById('bm').textContent=fls.length;
+  const ibC=fls.filter(fl=>Object.values(fl._conns).some(c=>c==='IB'||c==='BI')).length;
+  const biC=fls.filter(fl=>Object.values(fl._conns).some(c=>c==='BI')).length;
+  const newC=fls.filter(fl=>fl._isNew).length;
+  document.getElementById('stats').innerHTML=
+    `<div class="stat"><div class="stat-n">${fls.length}</div><div class="stat-l">전체 노선</div><div class="stat-note">MAX ${fmtMin(f.mct)}</div>${newC?`<div style="font-size:11px;color:#22c55e;margin-top:2px">▲ 신규 ${newC}편</div>`:''}</div>`+
+    `<div class="stat"><div class="stat-n" style="color:#3a7d44">${ibC}</div><div class="stat-l">◀ 일본발 연결</div></div>`+
+    `<div class="stat"><div class="stat-n" style="color:#1a5c9e">${biC}</div><div class="stat-l">▶◀ 양방향</div></div>`+
+    `<div class="stat"><div class="stat-n">${aps.length}</div><div class="stat-l">활성 공항</div></div>`;
+}
+
+// ── AIRPORT ───────────────────────────────────────────────────
+function renderAirport(fls,f) {
+  const aps=aaps(fls,f.ap);
+  document.getElementById('ba').textContent=aps.length;
+  document.getElementById('agrid').innerHTML=aps.map(ap=>{
+    const rows=fls.filter(fl=>fl._conns[ap]);if(!rows.length)return'';
+    const ibC=rows.filter(fl=>fl._conns[ap]==='IB'||fl._conns[ap]==='BI').length;
+    return`<div class="card"><div class="chdr"><span>${ap} <small>${APMETA[ap].n}</small></span><span style="font-size:12px;opacity:.8">${rows.length}편 · ◀${ibC}</span></div>`+
+    rows.map(fl=>{const ct=fl._conns[ap],mins=(fl.conn_mins||{})[ap];
+      const bg={IB:'#d4edda',BI:'#d0e4f7',OB:'#fef3cd'}[ct];
+      const fg={IB:'#1a5c2a',BI:'#0d3d6e',OB:'#7a5500'}[ct];
+      return`<div class="crow">${fl._isNew?'<span style="font-size:9px;background:#22c55e;color:#fff;border-radius:3px;padding:1px 4px;font-weight:700">NEW</span>':''}
+        <span class="rtag" style="background:${RC[fl.region]||'#888'}">${fl.region}</span>
+        <span class="cdest">${fl.route}</span><span class="cflt">${fl.obFlt}/${fl.ibFlt}</span>
+        <span class="ctm">착${fl.ibTime}/발${fl.obTime}</span>
+        <span class="cbadge" style="background:${bg};color:${fg}">${sym(ct)}<span class="cmin">${fmtMin(mins)}</span></span></div>`;
+    }).join('')+'</div>';
+  }).join('')||"<div class='nodata'>조건에 맞는 공항 없음</div>";
+}
+
+// ── TIMELINE ──────────────────────────────────────────────────
+function renderTimeline(fls,f) {
+  const ap=f.ap;
+  const items=fls.filter(fl=>{
+    const ok=ap?(fl._conns[ap]==='IB'||fl._conns[ap]==='BI'):Object.values(fl._conns).some(c=>c==='IB'||c==='BI');
+    return ok&&fl.obTime!=='-';
+  }).sort((a,b)=>a.obTime.localeCompare(b.obTime));
+  document.getElementById('tlbox').innerHTML=items.map(fl=>{
+    const ibA=APLIST.filter(a=>ap?(a===ap&&(fl._conns[a]==='IB'||fl._conns[a]==='BI')):(fl._conns[a]==='IB'||fl._conns[a]==='BI'));
+    return`<div class="tli"><div class="tlt">${fl.obTime}</div><div class="tlb">
+      <div class="tlr">${fl._isNew?'<span style="font-size:9px;background:#22c55e;color:#fff;border-radius:3px;padding:1px 4px;font-weight:700;margin-right:6px">NEW</span>':''}
+        <span class="rtag" style="background:${RC[fl.region]||'#888'};margin-right:8px">${fl.regionKo}</span>${fl.route}
+        <span style="font-size:12px;color:#888;margin-left:8px;font-weight:400">${fl.obFlt}/${fl.ibFlt}</span></div>
+      <div class="tlf">ICN 귀착 ${fl.ibTime}</div>
+      <div class="tlaps">${ibA.map(a=>`<span class="tlap ${fl._conns[a]}">${a} ${sym(fl._conns[a])} <span style="font-size:10px;opacity:.8">${fmtMin((fl.conn_mins||{})[a])}</span></span>`).join('')}</div>
+    </div><div class="tlcnt">${ibA.length}개<br>공항</div></div>`;
+  }).join('')||"<div class='nodata'>일본발 연결편 없음</div>";
+}
+
+// ── MAP ───────────────────────────────────────────────────────
+function initMap() {
+  if(map)return;
+  map=L.map('mapbox',{center:[36,134],zoom:5});
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{
+    attribution:'© OpenStreetMap © CARTO',subdomains:'abcd',maxZoom:12
+  }).addTo(map);
+}
+function clrMap(){mlayers.forEach(l=>{try{map.removeLayer(l);}catch(e){}});mlayers=[];}
+function mkBox(lbl,bg,sz,op){return L.divIcon({className:'',iconSize:[sz,sz],iconAnchor:[sz/2,sz/2],html:`<div style="background:${bg};color:#fff;border:2px solid rgba(255,255,255,.85);border-radius:5px;width:${sz}px;height:${sz}px;display:flex;align-items:center;justify-content:center;font-size:${sz>24?10:8}px;font-weight:700;box-shadow:0 1px 4px rgba(0,0,0,.25);opacity:${op||1};text-align:center;line-height:1.1">${lbl}</div>`});}
+function mkCircle(lbl,bg,sz){return L.divIcon({className:'',iconSize:[sz,sz],iconAnchor:[sz/2,sz/2],html:`<div style="background:${bg};color:#fff;border:2.5px solid rgba(255,255,255,.9);border-radius:50%;width:${sz}px;height:${sz}px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;box-shadow:0 2px 6px rgba(0,0,0,.3);text-align:center;line-height:1.1">${lbl}</div>`});}
+
+function renderMap(fls,f) {
+  if(!map)return; clrMap();
+  document.getElementById('mno').style.display=fls.length?'none':'block';
+  if(!fls.length)return;
+  document.getElementById('mct-badge').textContent='⏱ '+curSeason+' MAX '+fmtMin(f.mct);
+  const apF=f.ap;
+  mlayers.push(L.marker([ICN.lat,ICN.lng],{icon:mkCircle('인천<br>ICN','#1a3a5c',42),zIndexOffset:2000}).addTo(map));
+  const acmap={};
+  APLIST.forEach(ap=>{
+    const rel=fls.filter(fl=>fl._conns[ap]);
+    if(!rel.length){acmap[ap]=null;return;}
+    const t=rel.map(fl=>fl._conns[ap]);
+    acmap[ap]=t.includes('BI')?'BI':t.includes('IB')?'IB':'OB';
+  });
+  APLIST.forEach(ap=>{
+    const ct=acmap[ap],meta=APMETA[ap],active=!!ct,hl=!apF||apF===ap;
+    const sz=active?28:20,op=hl&&active?1:active?0.4:0.22;
+    const m=L.marker([meta.lat,meta.lng],{icon:mkBox(ap,active?LC[ct]:'#9ca3af',sz,op),zIndexOffset:active?500:50}).addTo(map);
+    mlayers.push(m);
+    if(active&&hl)mlayers.push(L.polyline([[ICN.lat,ICN.lng],[meta.lat,meta.lng]],{color:LC[ct],weight:ct==='BI'?3.5:2.5,opacity:.85,dashArray:ct==='OB'?'8,5':null}).addTo(map));
+    if(active){
+      const rows=fls.filter(fl=>fl._conns[ap]);
+      let pop=`<div style="font-family:sans-serif;min-width:230px"><div style="font-weight:700;font-size:14px;margin-bottom:4px">${ap} ${meta.n}</div><div style="font-size:12px;color:#555;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #eee">${{IB:'◀ 일본발',BI:'▶◀ 양방향',OB:'▶ 해외발만'}[ct]} · ${rows.length}편 (${curSeason})</div><table style="width:100%;border-collapse:collapse;font-size:12px"><tr style="background:#f4f6f8;font-weight:600"><td style="padding:3px 6px">목적지</td><td style="text-align:center">방향</td><td style="text-align:center">연결</td><td style="text-align:center">ICN발</td></tr>`;
+      rows.slice(0,10).forEach(fl=>{const mins=(fl.conn_mins||{})[ap];pop+=`<tr style="border-top:1px solid #f0f2f4${fl._isNew?';background:#f0fdf4':''}"><td style="padding:3px 6px;font-weight:600">${fl._isNew?'▲ ':''}${fl.route}</td><td style="text-align:center">${sym(fl._conns[ap])}</td><td style="text-align:center;font-weight:600">${fmtMin(mins)}</td><td style="text-align:center">${fl.obTime}</td></tr>`;});
+      if(rows.length>10)pop+=`<tr><td colspan="4" style="padding:3px 6px;color:#999;font-size:11px">외 ${rows.length-10}편...</td></tr>`;
+      pop+='</table></div>';
+      m.bindPopup(pop,{maxWidth:290});
+      m.on('click',()=>{const s=document.getElementById('fap');s.value=(s.value===ap)?'':ap;render();});
+    } else {
+      m.bindTooltip(`${ap} ${meta.n}<br><small style="color:#c00">현재 조건 연결 없음</small>`,{direction:'top'});
+    }
+  });
+  const destmap={};
+  fls.forEach(fl=>{
+    if(!destmap[fl.route])destmap[fl.route]={fls:[],types:new Set()};
+    destmap[fl.route].fls.push(fl);
+    const ct=apF?fl._conns[apF]:null;
+    if(ct)destmap[fl.route].types.add(ct);
+    else Object.values(fl._conns).forEach(c=>destmap[fl.route].types.add(c));
+  });
+  Object.entries(destmap).forEach(([route,info])=>{
+    const coord=DC[route];if(!coord)return;
+    const ts=[...info.types],ct=ts.includes('BI')?'BI':ts.includes('IB')?'IB':ts.includes('OB')?'OB':null;if(!ct)return;
+    mlayers.push(L.polyline([[ICN.lat,ICN.lng],coord],{color:LC[ct],weight:2,opacity:.5,dashArray:ct==='OB'?'7,5':null}).addTo(map));
+    const di=L.divIcon({className:'',iconSize:null,iconAnchor:[0,8],html:`<div style="background:${RC[info.fls[0].region]||'#555'};color:#fff;border:1.5px solid rgba(255,255,255,.7);border-radius:3px;padding:1px 5px;font-size:9px;font-weight:700;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.2)">${route}</div>`});
+    mlayers.push(L.marker(coord,{icon:di,zIndexOffset:100}).addTo(map));
+  });
+  const coords=[[ICN.lat,ICN.lng]];
+  if(apF&&APMETA[apF])coords.push([APMETA[apF].lat,APMETA[apF].lng]);
+  Object.keys(destmap).forEach(r=>{if(DC[r])coords.push(DC[r]);});
+  if(!apF)APLIST.filter(a=>acmap[a]).forEach(a=>coords.push([APMETA[a].lat,APMETA[a].lng]));
+  try{map.fitBounds(coords,{padding:[50,50],maxZoom:6});}catch(e){}
+}
+
+function render() {
+  const f=getF(),fls=filterFlights(f);
+  if(curTab==='matrix')        renderMatrix(fls,f);
+  else if(curTab==='airport')  renderAirport(fls,f);
+  else if(curTab==='timeline') renderTimeline(fls,f);
+  else if(curTab==='map')      renderMap(fls,f);
+}
+
+// ── 시작 ─────────────────────────────────────────────────────
+loadData();
+</script>
+</body>
+</html>
